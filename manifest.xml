@@ -1,0 +1,15 @@
+<package>
+  <description brief="ardrone_utd">
+
+     ardrone_utd
+
+  </description>
+  <author>Juan Pablo Ramirez/pablo.ramirez@utdallas.edu</author>
+  <license>BSD</license>
+  <review status="experimental" notes=""/>
+  <url>TBD</url>
+  <depend package="rosjava"/>
+
+</package>
+
+
