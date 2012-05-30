@@ -1,0 +1,10 @@
+apply plugin: 'application'
+apply plugin: 'java'
+
+mainClassName = 'org.ros.RosRun'
+
+dependencies {
+  compile group:'log4j', name:'log4j', version:'1.2.9'
+  compile project(':rosjava_geometry')
+  compile project(':rosjava')
+}
