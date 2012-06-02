@@ -6,7 +6,6 @@
 // The University of Texas at Dallas
 // Summer 2012
 //
-// TODO: Listen to a topic to change the video channel.
 // TODO: Provide the ability to send an emergency (kill) signal to the drone.
 
 
@@ -28,6 +27,7 @@ import com.codeminders.ardrone.ARDrone;
 import com.codeminders.ardrone.DroneVideoListener;
 import com.codeminders.ardrone.NavData;
 import com.codeminders.ardrone.NavDataListener;
+import com.codeminders.ardrone.ARDrone.VideoChannel;
 
 public class ardrone_utd extends AbstractNodeMain implements NavDataListener, DroneVideoListener {
 
@@ -35,6 +35,7 @@ public class ardrone_utd extends AbstractNodeMain implements NavDataListener, Dr
   double phi, theta, gaz, psi;
   byte[] bbuf = new byte[320*240*3];
   boolean landed = true;
+  boolean videohoriz = true;
   double pitch, roll, yaw, vertvel;
   Time tst;
 
@@ -68,10 +69,13 @@ public class ardrone_utd extends AbstractNodeMain implements NavDataListener, Dr
     Subscriber<geometry_msgs.Twist> subscriber = connectedNode.newSubscriber("cmd_vel", geometry_msgs.Twist._TYPE);
     Subscriber<std_msgs.Empty> substol = connectedNode.newSubscriber("ardrone_utd/takeoff", std_msgs.Empty._TYPE);
     Subscriber<std_msgs.Empty> subsreset = connectedNode.newSubscriber("ardrone_utd/reset", std_msgs.Empty._TYPE);
+    Subscriber<std_msgs.Empty> subschannel = connectedNode.newSubscriber("ardrone_utd/zap", std_msgs.Empty._TYPE);
     final Publisher<geometry_msgs.Quaternion> publisher =
         connectedNode.newPublisher("ardrone_utd/navdata", geometry_msgs.Quaternion._TYPE);
     final Publisher<sensor_msgs.Image> imgpub =
         connectedNode.newPublisher("ardrone_utd/image_raw", sensor_msgs.Image._TYPE);
+    final Publisher<sensor_msgs.CameraInfo> caminfopub =
+        connectedNode.newPublisher("ardrone_utd/camera_info", sensor_msgs.CameraInfo._TYPE);
         
 	try{
 		drone = new ARDrone();
@@ -126,6 +130,30 @@ public class ardrone_utd extends AbstractNodeMain implements NavDataListener, Dr
           }
       }
     });
+
+    subschannel.addMessageListener(new MessageListener<std_msgs.Empty>() {
+      @Override
+      public void onNewMessage(std_msgs.Empty message) {
+          try
+          {
+            if(videohoriz)
+            {
+	      drone.selectVideoChannel(VideoChannel.VERTICAL_ONLY);
+	      log.info("Attempting to use the vertical camera.");
+            }
+            else
+            {
+              drone.selectVideoChannel(VideoChannel.HORIZONTAL_ONLY);
+              log.info("Attempting to use the horizontal camera.");
+            }
+            videohoriz = !videohoriz;
+          }
+          catch (Throwable e)
+          {
+            e.printStackTrace();
+          }
+      }
+    });
     
     // The Twist message is interpreted just as in Brown's ardrone_brown package.
     subscriber.addMessageListener(new MessageListener<geometry_msgs.Twist>() {
@@ -140,7 +168,7 @@ public class ardrone_utd extends AbstractNodeMain implements NavDataListener, Dr
         yaw = val.getZ();
 	try
 	{
-	  drone.move((float)roll, (float)pitch, (float)vertvel, (float)yaw);
+	  drone.move((float)roll, -(float)pitch, (float)vertvel, (float)yaw);
 	}
 	catch (Throwable e)
 	{
@@ -166,18 +194,31 @@ public class ardrone_utd extends AbstractNodeMain implements NavDataListener, Dr
 
         geometry_msgs.Quaternion str = publisher.newMessage();
         sensor_msgs.Image imagemess = imgpub.newMessage();
+	sensor_msgs.CameraInfo caminfomsg = caminfopub.newMessage();
+
+	double[] K = {160, 0, 160, 0, 160, 120, 0, 0, 1};
+	//double[] K = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+	double[] P = {160, 0, 160, 0, 0, 160, 120, 0, 0, 0, 1, 0};
 
 	imghead.setSeq(sequenceNumber);
-	imghead.setStamp(tst.fromMillis(System.currentTimeMillis()));
+	tst = connectedNode.getCurrentTime();
+	imghead.setStamp(tst);
 	imghead.setFrameId("0");
 
         imagemess.setData(bbuf);
         imagemess.setEncoding("8UC3");
         imagemess.setWidth(320);
         imagemess.setHeight(240);
-        imagemess.setStep(0);
+        imagemess.setStep(320*3);
         imagemess.setIsBigendian((byte)0);
         imagemess.setHeader(imghead);
+
+	caminfomsg.setHeader(imghead);
+	caminfomsg.setWidth(320);
+	caminfomsg.setHeight(240);
+	//caminfomsg.setDistortionModel("plumb_bob");
+	caminfomsg.setK(K);
+	//caminfomsg.setP(P);
 
 	str.setX(phi);
 	str.setY(theta);
@@ -185,8 +226,9 @@ public class ardrone_utd extends AbstractNodeMain implements NavDataListener, Dr
 	str.setW(psi);
         publisher.publish(str);
 	imgpub.publish(imagemess);
+	caminfopub.publish(caminfomsg);
         sequenceNumber++;
-        Thread.sleep(100);
+        Thread.sleep(50);
       }
     });  
 
